@@ -1,0 +1,62 @@
+# Configuration for AWS Organizational Units and Accounts
+# This file defines which accounts the EC2 auto-shutdown will be deployed to
+
+organizational_units:
+  - name: "production"
+    description: "Production workloads"
+    accounts:
+      - account_id: "111111111111"
+        account_name: "prod-main"
+        role_name: "EC2ShutdownRole"
+        regions: 
+          - "us-east-1"
+          - "us-west-2"
+        
+      - account_id: "222222222222"
+        account_name: "prod-eu"
+        role_name: "EC2ShutdownRole"
+        regions:
+          - "eu-west-1"
+          - "eu-central-1"
+
+  - name: "development"
+    description: "Development and testing environments"
+    accounts:
+      - account_id: "333333333333"
+        account_name: "dev-main"
+        role_name: "EC2ShutdownRole"
+        regions:
+          - "us-east-1"
+        
+      - account_id: "444444444444"
+        account_name: "dev-sandbox"
+        role_name: "EC2ShutdownRole"
+        regions:
+          - "us-east-1"
+          - "us-west-2"
+
+  - name: "staging"
+    description: "Staging and pre-production environments"
+    accounts:
+      - account_id: "555555555555"
+        account_name: "staging-main"
+        role_name: "EC2ShutdownRole"
+        regions:
+          - "us-east-1"
+
+# Global settings that apply to all deployments
+global_settings:
+  # Schedule when the Lambda function runs (cron format)
+  schedule_expression: "cron(0 10 * * ? *)"  # Daily at 10:00 AM UTC
+  
+  # CPU utilization threshold (percentage)
+  cpu_threshold: 10.0
+  
+  # Hours of idle time before shutdown
+  idle_duration_hours: 2
+  
+  # Log retention in days
+  log_retention_days: 30
+  
+  # Dry run mode (set to true for testing)
+  dry_run: false
