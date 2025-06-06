@@ -50,15 +50,27 @@ organizational_units:
 
 ### 2. Set Up IAM Roles
 
-**In your automation account:**
+The setup script automatically detects whether to create an automation account role or a cross-account role by comparing your current AWS account (from `aws sts get-caller-identity`) with the provided account ID.
+
+**In your automation account (where Lambda will run):**
 ```bash
-./scripts/deploy.sh setup-iam --account-id YOUR_AUTOMATION_ACCOUNT_ID
+# Script detects this is automation account and creates EC2ShutdownAutomationRole
+./scripts/deploy.sh setup-iam --account-name YOUR_AUTOMATION_ACCOUNT_NAME
 ```
 
-**In each target account:**
+**In each target account (where EC2s will be managed):**
 ```bash
-./scripts/deploy.sh setup-iam --account-id TARGET_ACCOUNT_ID
+# Script detects this is a target account and creates EC2ShutdownRole for cross-account access
+./scripts/deploy.sh setup-iam --account-name TARGET_ACCOUNT_NAME
 ```
+
+**How it works:**
+- If current AWS account == target account → Creates automation account role with cross-account assumption and direct EC2 operation permissions
+- If current AWS account != target account → Creates cross-account role for target account with EC2 shutdown permissions
+
+**Roles Created:**
+- **Automation Account**: `EC2ShutdownAutomationRole` + `EC2ShutdownDirectPolicy` (comprehensive permissions)
+- **Target Account**: `EC2ShutdownRole` (scoped EC2 and CloudWatch permissions)
 
 ### 3. Configure GitLab Variables
 
@@ -192,13 +204,21 @@ Each execution logs:
 
 ### Permissions Required
 
-The Lambda execution role needs:
-- `ec2:DescribeInstances`
-- `ec2:DescribeInstanceStatus`  
-- `ec2:StopInstances`
-- `ec2:DescribeTags`
-- `cloudwatch:GetMetricStatistics`
-- `cloudwatch:GetMetricData`
+**Automation Account Role** (`EC2ShutdownAutomationRole`):
+- Cross-account role assumption: `sts:AssumeRole`
+- Direct EC2 operations (if needed): `ec2:DescribeInstances`, `ec2:DescribeInstanceStatus`, `ec2:StopInstances`, `ec2:DescribeTags`
+- CloudWatch metrics: `cloudwatch:GetMetricStatistics`, `cloudwatch:GetMetricData` 
+- Lambda execution: `lambda:InvokeFunction`
+- EventBridge: `events:PutEvents`, `events:DescribeRule`
+- CloudWatch Logs: `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
+
+**Target Account Cross-Account Role** (`EC2ShutdownRole`):
+- `ec2:DescribeInstances`, `ec2:DescribeInstanceStatus`, `ec2:StopInstances`, `ec2:DescribeTags`
+- `cloudwatch:GetMetricStatistics`, `cloudwatch:GetMetricData`
+- `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
+- `lambda:InvokeFunction`
+
+All permissions include security conditions to restrict access to running instances and EC2-related resources only.
 
 ## Troubleshooting
 

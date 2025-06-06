@@ -160,7 +160,7 @@ ec2-multi-ou-idle-shutdown/
    # Package Lambda
    ./scripts/deploy.sh package-lambda
    
-   # Setup IAM for specific account
+   # Setup IAM for specific account (auto-detects automation vs target account)
    ./scripts/deploy.sh setup-iam --account-name prod-main
    
    # Test Lambda locally
@@ -169,6 +169,41 @@ ec2-multi-ou-idle-shutdown/
    # Validate specific account
    ./scripts/deploy.sh validate --account-name prod-main
    ```
+
+### IAM Setup Automation
+
+The `setup-iam` command automatically determines whether to create an automation account role or a cross-account role:
+
+**Automatic Detection Logic:**
+- Compares current AWS account (from `aws sts get-caller-identity`) with target account ID
+- **Same account** → Creates `EC2ShutdownAutomationRole` (automation account setup)
+- **Different account** → Creates `EC2ShutdownRole` (target account setup)
+
+**Example Flow:**
+```bash
+# When authenticated to automation account (111111111111)
+./scripts/deploy.sh setup-iam --account-name prod-main  # Creates automation role
+
+# When authenticated to target account (222222222222) 
+./scripts/deploy.sh setup-iam --account-name prod-main  # Creates cross-account role
+```
+
+This eliminates the need to specify account types manually and prevents configuration errors.
+
+**IAM Resources Created:**
+
+**Automation Account Setup:**
+- `EC2ShutdownAutomationRole` - Main role for cross-account access
+- `EC2ShutdownDirectPolicy` - Comprehensive policy with:
+  - EC2 operations (describe, stop instances) with running instance condition
+  - CloudWatch metrics access (restricted to AWS/EC2 namespace)
+  - Lambda execution permissions
+  - EventBridge scheduling permissions
+  - CloudWatch Logs access
+
+**Target Account Setup:**
+- `EC2ShutdownRole` - Cross-account role with scoped permissions for EC2 shutdown operations
+- Trust relationship allows automation account to assume this role
 
 ### Method 3: Direct Terraform Commands
 

@@ -46,6 +46,85 @@ resource "aws_iam_role_policy" "automation_policy" {
   })
 }
 
+# Additional policy for automation account to perform EC2 operations directly (if needed)
+resource "aws_iam_role_policy" "automation_ec2_policy" {
+  count = var.is_automation_account ? 1 : 0
+  name  = "EC2ShutdownDirectPolicy"
+  role  = aws_iam_role.automation_role[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EC2IdleShutdownPermissions"
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeInstanceStatus", 
+          "ec2:DescribeTags",
+          "ec2:StopInstances"
+        ]
+        Resource = "*"
+        Condition = {
+          "ForAllValues:StringEquals" = {
+            "ec2:InstanceState" = ["running"]
+          }
+        }
+      },
+      {
+        Sid    = "CloudWatchMetricsAccess"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:GetMetricStatistics",
+          "cloudwatch:GetMetricData"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "cloudwatch:namespace" = "AWS/EC2"
+          }
+        }
+      },
+      {
+        Sid    = "CloudWatchLogsAccess"
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream", 
+          "logs:PutLogEvents",
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams"
+        ]
+        Resource = [
+          "arn:aws:logs:*:${var.target_account_id}:log-group:/aws/lambda/ec2-auto-shutdown*",
+          "arn:aws:logs:*:${var.target_account_id}:log-group:/aws/lambda/ec2-auto-shutdown*:*"
+        ]
+      },
+      {
+        Sid    = "LambdaExecutionPermissions"
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = "arn:aws:lambda:*:${var.target_account_id}:function:ec2-auto-shutdown"
+      },
+      {
+        Sid    = "EventBridgePermissions"
+        Effect = "Allow"
+        Action = [
+          "events:PutEvents",
+          "events:DescribeRule",
+          "events:ListTargetsByRule"
+        ]
+        Resource = [
+          "arn:aws:events:*:${var.target_account_id}:rule/ec2-shutdown-schedule",
+          "arn:aws:events:*:${var.target_account_id}:event-bus/default"
+        ]
+      }
+    ]
+  })
+}
+
 # Cross-Account Role Template (deploy this in each target account)
 # This is a template - you'll need to customize the trust policy for your org
 
