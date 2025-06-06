@@ -1,0 +1,8 @@
+target_account_id = "444444444444"
+target_region = "us-east-1"
+cross_account_role_name = "EC2ShutdownRole"
+lambda_package_path = "../../lambda/ec2-shutdown-lambda.zip"
+environment = "development"
+schedule_expression = "cron(0 10 * * ? *)"
+log_level = "INFO"
+dry_run = "false"

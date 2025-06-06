@@ -20,19 +20,17 @@ usage() {
     echo "Commands:"
     echo "  setup-iam        Set up IAM roles for cross-account access"
     echo "  package-lambda   Package Lambda function for deployment"
-    echo "  deploy           Deploy to specific environment"
+    echo "  deploy-account   Deploy to specific account"
     echo "  test-lambda      Test Lambda function locally"
     echo "  validate         Validate Terraform configuration"
     echo ""
     echo "Options:"
-    echo "  --environment    Environment to deploy to (production, development, staging)"
-    echo "  --account-id     AWS Account ID"
-    echo "  --region         AWS Region"
+    echo "  --account-name   Account name (prod-main, prod-eu, dev-main, dev-sandbox, staging-main)"
     echo "  --dry-run        Enable dry run mode"
     echo ""
     echo "Examples:"
-    echo "  $0 setup-iam --account-id 123456789012"
-    echo "  $0 deploy --environment production"
+    echo "  $0 setup-iam --account-name prod-main"
+    echo "  $0 deploy-account --account-name prod-main"
     echo "  $0 package-lambda"
 }
 
@@ -115,91 +113,44 @@ validate_terraform() {
     log "Terraform configuration is valid"
 }
 
-deploy_environment() {
-    local environment="$1"
-    local account_id="$2"
-    local region="$3"
-    local dry_run="$4"
+deploy_account() {
+    local account_name="$1"
+    local dry_run="$2"
     
-    if [[ -z "$environment" ]]; then
-        error "Environment is required for deployment"
+    if [[ -z "$account_name" ]]; then
+        error "Account name is required for deployment"
     fi
     
-    log "Deploying to environment: $environment"
+    # Validate account name
+    local account_dir="$PROJECT_ROOT/accounts/$account_name"
+    if [[ ! -d "$account_dir" ]]; then
+        error "Account directory not found: $account_dir"
+    fi
+    
+    log "Deploying to account: $account_name"
     
     # Package Lambda first
     package_lambda
     
-    # Read configuration
-    config_file="$PROJECT_ROOT/config/ou-accounts.yaml"
-    if [[ ! -f "$config_file" ]]; then
-        error "Configuration file not found: $config_file"
-    fi
-    
     # Deploy using Terraform
-    cd "$PROJECT_ROOT/terraform"
+    cd "$account_dir"
     
-    if [[ -n "$account_id" && -n "$region" ]]; then
-        # Manual deployment to specific account/region
-        log "Deploying to Account: $account_id, Region: $region"
-        
-        terraform init \
-            -backend-config="bucket=terraform-state-$account_id" \
-            -backend-config="key=ec2-shutdown/$region/terraform.tfstate" \
-            -backend-config="region=$region"
-        
-        terraform plan \
-            -var="target_account_id=$account_id" \
-            -var="target_region=$region" \
-            -var="environment=$environment" \
-            -var="lambda_package_path=../lambda/ec2-shutdown-lambda.zip" \
-            ${dry_run:+-var="dry_run=true"}
-        
-        read -p "Apply changes? (y/N): " confirm
-        if [[ "$confirm" =~ ^[Yy]$ ]]; then
-            terraform apply \
-                -var="target_account_id=$account_id" \
-                -var="target_region=$region" \
-                -var="environment=$environment" \
-                -var="lambda_package_path=../lambda/ec2-shutdown-lambda.zip" \
-                ${dry_run:+-var="dry_run=true"}
-        fi
+    log "Initializing Terraform..."
+    terraform init
+    
+    log "Planning Terraform changes..."
+    terraform plan ${dry_run:+-var="dry_run=true"}
+    
+    read -p "Apply changes? (y/N): " confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        log "Applying Terraform changes..."
+        terraform apply ${dry_run:+-var="dry_run=true"}
     else
-        # Deploy to all accounts in environment (requires Python/YAML parsing)
-        python3 << EOF
-import yaml
-import os
-import subprocess
-
-with open('$config_file', 'r') as f:
-    config = yaml.safe_load(f)
-
-for ou in config['organizational_units']:
-    if ou['name'] == '$environment':
-        for account in ou['accounts']:
-            for region in account['regions']:
-                print(f"Deploying to Account: {account['account_id']}, Region: {region}")
-                
-                # Run terraform commands
-                subprocess.run([
-                    'terraform', 'init',
-                    f'-backend-config=bucket=terraform-state-{account["account_id"]}',
-                    f'-backend-config=key=ec2-shutdown/{region}/terraform.tfstate',
-                    f'-backend-config=region={region}'
-                ], check=True)
-                
-                subprocess.run([
-                    'terraform', 'apply', '-auto-approve',
-                    f'-var=target_account_id={account["account_id"]}',
-                    f'-var=target_region={region}',
-                    f'-var=environment=$environment',
-                    f'-var=cross_account_role_name={account["role_name"]}',
-                    f'-var=lambda_package_path=../lambda/ec2-shutdown-lambda.zip'
-                ] + (['${dry_run:+-var=dry_run=true}'] if '$dry_run' else []), check=True)
-EOF
+        log "Deployment cancelled"
+        return 0
     fi
     
-    log "Deployment completed"
+    log "Deployment completed for $account_name"
 }
 
 test_lambda() {
@@ -245,27 +196,17 @@ print(json.dumps(result, indent=2))
 
 # Parse command line arguments
 COMMAND=""
-ENVIRONMENT=""
-ACCOUNT_ID=""
-REGION=""
+ACCOUNT_NAME=""
 DRY_RUN=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        setup-iam|package-lambda|deploy|test-lambda|validate)
+        setup-iam|package-lambda|deploy-account|test-lambda|validate)
             COMMAND="$1"
             shift
             ;;
-        --environment)
-            ENVIRONMENT="$2"
-            shift 2
-            ;;
-        --account-id)
-            ACCOUNT_ID="$2"
-            shift 2
-            ;;
-        --region)
-            REGION="$2"
+        --account-name)
+            ACCOUNT_NAME="$2"
             shift 2
             ;;
         --dry-run)
@@ -288,19 +229,26 @@ check_dependencies
 # Execute command
 case "$COMMAND" in
     setup-iam)
-        setup_iam "$ACCOUNT_ID"
+        if [[ -z "$ACCOUNT_NAME" ]]; then
+            error "Account name is required for IAM setup"
+        fi
+        setup_iam "$ACCOUNT_NAME"
         ;;
     package-lambda)
         package_lambda
         ;;
-    deploy)
-        deploy_environment "$ENVIRONMENT" "$ACCOUNT_ID" "$REGION" "$DRY_RUN"
+    deploy-account)
+        deploy_account "$ACCOUNT_NAME" "$DRY_RUN"
         ;;
     test-lambda)
         test_lambda
         ;;
     validate)
-        validate_terraform
+        if [[ -n "$ACCOUNT_NAME" ]]; then
+            cd "$PROJECT_ROOT/accounts/$ACCOUNT_NAME" && terraform validate
+        else
+            validate_terraform
+        fi
         ;;
     "")
         error "No command specified. Use --help for usage information."
