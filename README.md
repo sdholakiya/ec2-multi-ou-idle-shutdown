@@ -247,6 +247,3 @@ For issues or questions:
 3. Test with dry run mode enabled
 4. Review instance tags and types
 
-## License
-
-This project is licensed under the MIT License.
