@@ -59,14 +59,57 @@ check_dependencies() {
     log "All dependencies are available"
 }
 
-setup_iam() {
-    local account_id="$1"
+get_account_id() {
+    local account_name="$1"
     
-    if [[ -z "$account_id" ]]; then
-        error "Account ID is required for IAM setup"
+    if [[ -z "$account_name" ]]; then
+        error "Account name is required"
     fi
     
-    log "Setting up IAM roles for account: $account_id"
+    # Parse ou-accounts.yaml to get account ID
+    if ! command -v python3 &> /dev/null; then
+        error "Python3 is required to parse configuration file"
+    fi
+    
+    local account_id=$(python3 -c "
+import yaml
+import sys
+
+try:
+    with open('$PROJECT_ROOT/config/ou-accounts.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    
+    for ou in config['organizational_units']:
+        for account in ou['accounts']:
+            if account['account_name'] == '$account_name':
+                print(account['account_id'])
+                sys.exit(0)
+    
+    print('', file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f'Error parsing config: {e}', file=sys.stderr)
+    sys.exit(1)
+")
+    
+    if [[ -z "$account_id" ]]; then
+        error "Account name '$account_name' not found in config/ou-accounts.yaml"
+    fi
+    
+    echo "$account_id"
+}
+
+setup_iam() {
+    local account_name="$1"
+    
+    if [[ -z "$account_name" ]]; then
+        error "Account name is required for IAM setup"
+    fi
+    
+    # Get account ID from account name
+    local account_id=$(get_account_id "$account_name")
+    
+    log "Setting up IAM roles for account: $account_name ($account_id)"
     
     # Check if this is the automation account
     current_account=$(aws sts get-caller-identity --query Account --output text)

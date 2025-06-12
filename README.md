@@ -50,27 +50,42 @@ organizational_units:
 
 ### 2. Set Up IAM Roles
 
-The setup script automatically detects whether to create an automation account role or a cross-account role by comparing your current AWS account (from `aws sts get-caller-identity`) with the provided account ID.
+#### Understanding Automation vs Target Accounts
 
-**In your automation account (where Lambda will run):**
+- **Automation Account**: The central account that runs the Lambda function and orchestrates EC2 shutdowns across all other accounts. Choose one account (typically your main/central account) as the automation account.
+- **Target Accounts**: All accounts (including the automation account itself) where EC2 instances will be evaluated and potentially shut down.
+
+#### Setup Process
+
+The script automatically detects whether to create an automation account role or a cross-account role by comparing your current AWS account with the target account ID from the configuration.
+
+**Step 1: Set up the Automation Account**
 ```bash
-# Script detects this is automation account and creates EC2ShutdownAutomationRole
-./scripts/deploy.sh setup-iam --account-name YOUR_AUTOMATION_ACCOUNT_NAME
+# Authenticate to your chosen automation account (e.g., prod-main)
+# Run this command to create the automation role:
+./scripts/deploy.sh setup-iam --account-name prod-main
 ```
 
-**In each target account (where EC2s will be managed):**
+**Step 2: Set up Target Accounts (Cross-Account Roles)**
 ```bash
-# Script detects this is a target account and creates EC2ShutdownRole for cross-account access
-./scripts/deploy.sh setup-iam --account-name TARGET_ACCOUNT_NAME
+# Authenticate to each target account and create cross-account roles
+# For other accounts:
+./scripts/deploy.sh setup-iam --account-name prod-eu
+./scripts/deploy.sh setup-iam --account-name dev-main
+./scripts/deploy.sh setup-iam --account-name dev-sandbox
+./scripts/deploy.sh setup-iam --account-name staging-main
 ```
+
+**Available account names:** `prod-main`, `prod-eu`, `dev-main`, `dev-sandbox`, `staging-main`
 
 **How it works:**
-- If current AWS account == target account → Creates automation account role with cross-account assumption and direct EC2 operation permissions
-- If current AWS account != target account → Creates cross-account role for target account with EC2 shutdown permissions
+- Script parses `config/ou-accounts.yaml` to map account names to account IDs
+- **Same account** (automation account): Creates `EC2ShutdownAutomationRole` with cross-account assumption and direct EC2 operation permissions
+- **Different account** (target account): Creates `EC2ShutdownRole` with EC2 shutdown permissions and trust relationship to automation account
 
 **Roles Created:**
-- **Automation Account**: `EC2ShutdownAutomationRole` + `EC2ShutdownDirectPolicy` (comprehensive permissions)
-- **Target Account**: `EC2ShutdownRole` (scoped EC2 and CloudWatch permissions)
+- **Automation Account**: `EC2ShutdownAutomationRole` + `EC2ShutdownDirectPolicy` (comprehensive permissions for orchestration)
+- **Target Accounts**: `EC2ShutdownRole` (scoped EC2 and CloudWatch permissions, trusted by automation account)
 
 ### 3. Configure GitLab Variables
 

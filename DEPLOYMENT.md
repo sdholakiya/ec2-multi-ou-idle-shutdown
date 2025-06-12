@@ -161,6 +161,7 @@ ec2-multi-ou-idle-shutdown/
    ./scripts/deploy.sh package-lambda
    
    # Setup IAM for specific account (auto-detects automation vs target account)
+   # Use account names from config/ou-accounts.yaml: prod-main, prod-eu, dev-main, dev-sandbox, staging-main
    ./scripts/deploy.sh setup-iam --account-name prod-main
    
    # Test Lambda locally
@@ -172,21 +173,44 @@ ec2-multi-ou-idle-shutdown/
 
 ### IAM Setup Automation
 
+#### Understanding the Setup Flow
+
+1. **Choose Your Automation Account**: Select one account (typically your main/central account like `prod-main`) to serve as the automation account where the Lambda function will run.
+
+2. **Two-Step Setup Process**:
+   - **Step 1**: Set up automation role in your chosen automation account
+   - **Step 2**: Set up cross-account roles in all target accounts (including other accounts that will have EC2s managed)
+
 The `setup-iam` command automatically determines whether to create an automation account role or a cross-account role:
 
 **Automatic Detection Logic:**
+- Script parses `config/ou-accounts.yaml` to map account names to account IDs
 - Compares current AWS account (from `aws sts get-caller-identity`) with target account ID
 - **Same account** → Creates `EC2ShutdownAutomationRole` (automation account setup)
 - **Different account** → Creates `EC2ShutdownRole` (target account setup)
 
-**Example Flow:**
+**Example Setup Flow:**
 ```bash
-# When authenticated to automation account (111111111111)
-./scripts/deploy.sh setup-iam --account-name prod-main  # Creates automation role
+# Step 1: Authenticate to your chosen automation account (111111111111)
+# This creates the automation role with comprehensive permissions
+./scripts/deploy.sh setup-iam --account-name prod-main  # Creates EC2ShutdownAutomationRole
 
-# When authenticated to target account (222222222222) 
-./scripts/deploy.sh setup-iam --account-name prod-main  # Creates cross-account role
+# Step 2: Authenticate to each target account and create cross-account roles
+# When authenticated to target account (222222222222)
+./scripts/deploy.sh setup-iam --account-name prod-eu  # Creates EC2ShutdownRole
+
+# When authenticated to target account (333333333333) 
+./scripts/deploy.sh setup-iam --account-name dev-main  # Creates EC2ShutdownRole
+
+# Repeat for all target accounts...
 ```
+
+**Available Account Names:**
+- `prod-main` (111111111111) - typically used as automation account
+- `prod-eu` (222222222222)
+- `dev-main` (333333333333)
+- `dev-sandbox` (444444444444)
+- `staging-main` (555555555555)
 
 This eliminates the need to specify account types manually and prevents configuration errors.
 
