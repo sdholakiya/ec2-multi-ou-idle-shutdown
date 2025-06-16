@@ -62,7 +62,9 @@ resource "aws_iam_role_policy" "automation_ec2_policy" {
           "ec2:DescribeInstances",
           "ec2:DescribeInstanceStatus", 
           "ec2:DescribeTags",
-          "ec2:StopInstances"
+          "ec2:StopInstances",
+          "ec2:MonitorInstances",
+          "ec2:UnmonitorInstances"
         ]
         Resource = "*"
         Condition = {

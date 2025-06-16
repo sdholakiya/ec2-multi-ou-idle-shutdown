@@ -42,3 +42,9 @@ variable "dry_run" {
   type        = string
   default     = "false"
 }
+
+variable "is_automation_account" {
+  description = "Whether this account serves as the automation account"
+  type        = bool
+  default     = false
+}

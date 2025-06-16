@@ -12,7 +12,7 @@ resource "aws_iam_role" "automation_role" {
       {
         Effect = "Allow"
         Principal = {
-          AWS = "arn:aws:iam::${var.target_account_id}:root"
+          Service = "lambda.amazonaws.com"
         }
         Action = "sts:AssumeRole"
       }
@@ -34,7 +34,11 @@ resource "aws_iam_role_policy" "automation_policy" {
           "sts:AssumeRole"
         ]
         Resource = [
-          "arn:aws:iam::*:role/EC2ShutdownRole"
+          "arn:aws:iam::111111111111:role/EC2ShutdownRole",
+          "arn:aws:iam::222222222222:role/EC2ShutdownRole",
+          "arn:aws:iam::333333333333:role/EC2ShutdownRole",
+          "arn:aws:iam::444444444444:role/EC2ShutdownRole",
+          "arn:aws:iam::555555555555:role/EC2ShutdownRole"
         ]
       }
     ]
@@ -45,7 +49,7 @@ resource "aws_iam_role_policy" "automation_policy" {
 # This is a template - you'll need to customize the trust policy for your org
 
 locals {
-  automation_account_id = "YOUR_AUTOMATION_ACCOUNT_ID"  # Replace with your automation account ID
+  automation_account_id = "111111111111"  # prod-main serves as automation account
 }
 
 resource "aws_iam_role" "cross_account_role" {
@@ -89,7 +93,9 @@ resource "aws_iam_role_policy" "cross_account_policy" {
           "ec2:DescribeInstances",
           "ec2:DescribeInstanceStatus",
           "ec2:StopInstances",
-          "ec2:DescribeTags"
+          "ec2:DescribeTags",
+          "ec2:MonitorInstances",
+          "ec2:UnmonitorInstances"
         ]
         Resource = "*"
       },

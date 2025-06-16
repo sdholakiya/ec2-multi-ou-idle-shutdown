@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 import boto3
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
@@ -18,6 +19,7 @@ cloudwatch_client = boto3.client('cloudwatch')
 CPU_THRESHOLD = 10.0  # CPU utilization percentage threshold
 IDLE_DURATION_HOURS = 2  # Hours of idle time before shutdown
 DRY_RUN = os.environ.get('DRY_RUN', 'false').lower() == 'true'
+ENABLE_DETAILED_MONITORING = os.environ.get('ENABLE_DETAILED_MONITORING', 'false').lower() == 'true'
 
 # Instance types to exclude (P and G types for GPU/ML workloads)
 EXCLUDED_INSTANCE_TYPES = ['p', 'g']
@@ -51,6 +53,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 })
                 logger.info(f"Skipping {instance_id} ({instance_type}): {skip_reason}")
                 continue
+            
+            # Enable detailed monitoring if needed and configured
+            monitoring_enabled = enable_detailed_monitoring_if_needed(instance_id)
+            if monitoring_enabled:
+                logger.info(f"Enabled detailed monitoring for {instance_id}, waiting 60 seconds for metrics")
+                time.sleep(60)  # Wait for new metrics to be available
             
             # Check CPU utilization
             if is_instance_idle(instance_id):
@@ -141,6 +149,54 @@ def should_skip_instance(instance: Dict[str, Any]) -> Optional[str]:
         return "Instance has 'Shutdown=No' tag"
     
     return None
+
+
+def enable_detailed_monitoring_if_needed(instance_id: str) -> bool:
+    """
+    Enable detailed monitoring for an instance if it's not already enabled
+    Returns True if monitoring was enabled, False if already enabled or failed
+    """
+    if not ENABLE_DETAILED_MONITORING:
+        return False
+    
+    try:
+        # Check current monitoring status
+        response = ec2_client.describe_instances(InstanceIds=[instance_id])
+        
+        for reservation in response['Reservations']:
+            for instance in reservation['Instances']:
+                monitoring_state = instance.get('Monitoring', {}).get('State', 'disabled')
+                
+                if monitoring_state == 'disabled':
+                    logger.info(f"Enabling detailed monitoring for instance {instance_id}")
+                    
+                    if not DRY_RUN:
+                        # Enable detailed monitoring
+                        monitor_response = ec2_client.monitor_instances(InstanceIds=[instance_id])
+                        
+                        # Log the result
+                        for monitor_info in monitor_response.get('InstanceMonitorings', []):
+                            new_state = monitor_info.get('Monitoring', {}).get('State', 'unknown')
+                            logger.info(f"Instance {instance_id} monitoring state changed to: {new_state}")
+                        
+                        return True
+                    else:
+                        logger.info(f"DRY_RUN: Would enable detailed monitoring for {instance_id}")
+                        return True
+                        
+                elif monitoring_state == 'enabled':
+                    logger.debug(f"Instance {instance_id} already has detailed monitoring enabled")
+                    return False
+                    
+                elif monitoring_state == 'pending':
+                    logger.info(f"Instance {instance_id} monitoring state is pending")
+                    return False
+                    
+    except Exception as e:
+        logger.error(f"Error enabling detailed monitoring for instance {instance_id}: {str(e)}")
+        return False
+    
+    return False
 
 
 def is_instance_idle(instance_id: str) -> bool:
