@@ -6,3 +6,4 @@ environment = "production"
 schedule_expression = "cron(0 10 * * ? *)"
 log_level = "INFO"
 dry_run = "false"
+is_automation_account = true

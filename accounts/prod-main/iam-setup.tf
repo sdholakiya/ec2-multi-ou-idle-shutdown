@@ -12,14 +12,9 @@ resource "aws_iam_role" "automation_role" {
       {
         Effect = "Allow"
         Principal = {
-          Federated = "arn:aws:iam::${var.target_account_id}:oidc-provider/token.actions.githubusercontent.com"
+          AWS = "arn:aws:iam::${var.target_account_id}:root"
         }
-        Action = "sts:AssumeRoleWithWebIdentity"
-        Condition = {
-          StringEquals = {
-            "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          }
-        }
+        Action = "sts:AssumeRole"
       }
     ]
   })
