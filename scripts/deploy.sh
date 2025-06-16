@@ -114,15 +114,21 @@ setup_iam() {
     # Check if this is the automation account
     current_account=$(aws sts get-caller-identity --query Account --output text)
     
+    # Validate account directory exists
+    local account_dir="$PROJECT_ROOT/accounts/$account_name"
+    if [[ ! -d "$account_dir" ]]; then
+        error "Account directory not found: $account_dir"
+    fi
+    
     if [[ "$current_account" == "$account_id" ]]; then
         log "Setting up automation account IAM role"
-        cd "$PROJECT_ROOT/terraform"
+        cd "$account_dir"
         terraform init
         terraform plan -var="is_automation_account=true" -var="target_account_id=$account_id"
         terraform apply -var="is_automation_account=true" -var="target_account_id=$account_id"
     else
         log "Setting up cross-account IAM role"
-        cd "$PROJECT_ROOT/terraform"
+        cd "$account_dir"
         terraform init
         terraform plan -var="is_automation_account=false" -var="target_account_id=$account_id"
         terraform apply -var="is_automation_account=false" -var="target_account_id=$account_id"
