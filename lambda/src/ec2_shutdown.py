@@ -8,8 +8,16 @@ from typing import List, Dict, Any, Optional
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
-logging.basicConfig(level=getattr(logging, log_level))
+logging.basicConfig(
+    level=getattr(logging, log_level),
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Configure boto3 logging if needed for debugging
+if log_level == 'DEBUG':
+    boto3.set_stream_logger('boto3', logging.DEBUG)
+    boto3.set_stream_logger('botocore', logging.DEBUG)
 
 # Initialize AWS clients
 ec2_client = boto3.client('ec2')
