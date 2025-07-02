@@ -5,7 +5,7 @@ Automated EC2 instance shutdown based on CPU utilization across AWS Organization
 ## Features
 
 - **Cross-Account Deployment**: Works across multiple AWS accounts in your organization
-- **Smart Shutdown Logic**: Shuts down instances idle for 2+ hours (configurable)
+- **Smart Shutdown Logic**: Shuts down instances idle for 3+ hours (configurable)
 - **Instance Protection**: Excludes P/G instance types and instances tagged `Shutdown=No`
 - **Secure Credentials**: No AWS credentials stored in GitLab
 - **Environment Management**: Separate deployments for production, development, staging
@@ -104,7 +104,7 @@ Push to your configured branches to trigger deployments:
 
 An EC2 instance will be shut down if **ALL** conditions are met:
 
-✅ **CPU Utilization**: Average CPU < 10% for 2+ hours  
+✅ **CPU Utilization**: ALL datapoints CPU < 1% for 3+ hours  
 ✅ **Instance Type**: NOT P or G type (excludes GPU/ML instances)  
 ✅ **Tag Check**: Does NOT have `Shutdown=No` tag  
 
@@ -125,8 +125,8 @@ Edit `config/ou-accounts.yaml` to customize:
 ```yaml
 global_settings:
   schedule_expression: "cron(0 10 * * ? *)"  # Daily at 10:00 AM UTC
-  cpu_threshold: 10.0                        # CPU percentage threshold
-  idle_duration_hours: 2                     # Hours of idle time
+  cpu_threshold: 1.0                         # CPU percentage threshold
+  idle_duration_hours: 3                     # Hours of idle time
   dry_run: false                            # Test mode
 ```
 
@@ -240,12 +240,13 @@ All permissions include security conditions to restrict access to running instan
 ### Common Issues
 
 **"No metrics found for instance"**
-- Instance may be too new (< 2 hours old)
+- Instance may be too new (< 3.5 hours old)
 - CloudWatch detailed monitoring may be disabled
 
 **"Insufficient metrics"**  
-- Instance needs at least 1 hour of CloudWatch data
+- Instance needs at least 3 hours of continuous CloudWatch data
 - Check if instance was recently started
+- Ensure 5-minute intervals are present without significant gaps
 
 **"Permission denied"**
 - Verify cross-account IAM role trust relationships

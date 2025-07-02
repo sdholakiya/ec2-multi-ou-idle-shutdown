@@ -20,6 +20,15 @@ The solution is now organized into separate directories for each AWS account, al
 - S3 backend state configuration
 - Account-specific variables
 
+### Key Configuration Changes
+
+The system has been updated with the following key settings:
+- **CPU Threshold**: 1% (down from 10%)
+- **Idle Duration**: 3 hours (up from 2 hours)
+- **Evaluation Criteria**: ALL datapoints must be below 1% CPU (100% strict)
+- **Launch Time Consideration**: Instances launched within the last 3 hours use launch time as the start of the evaluation period
+- **Continuous Monitoring**: Ensures 5-minute intervals are present without significant gaps
+
 ## Prerequisites
 
 ### Required Tools

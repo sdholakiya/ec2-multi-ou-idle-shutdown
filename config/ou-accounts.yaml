@@ -50,10 +50,10 @@ global_settings:
   schedule_expression: "cron(0 10 * * ? *)"  # Daily at 10:00 AM UTC
   
   # CPU utilization threshold (percentage)
-  cpu_threshold: 10.0
+  cpu_threshold: 1.0
   
   # Hours of idle time before shutdown
-  idle_duration_hours: 2
+  idle_duration_hours: 3
   
   # Log retention in days
   log_retention_days: 30

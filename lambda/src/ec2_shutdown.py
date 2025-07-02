@@ -24,8 +24,8 @@ ec2_client = boto3.client('ec2')
 cloudwatch_client = boto3.client('cloudwatch')
 
 # Configuration
-CPU_THRESHOLD = 10.0  # CPU utilization percentage threshold
-IDLE_DURATION_HOURS = 2  # Hours of idle time before shutdown
+CPU_THRESHOLD = 1.0  # CPU utilization percentage threshold
+IDLE_DURATION_HOURS = 3  # Hours of idle time before shutdown
 DRY_RUN = os.environ.get('DRY_RUN', 'false').lower() == 'true'
 ENABLE_DETAILED_MONITORING = os.environ.get('ENABLE_DETAILED_MONITORING', 'false').lower() == 'true'
 
@@ -210,10 +210,44 @@ def enable_detailed_monitoring_if_needed(instance_id: str) -> bool:
 def is_instance_idle(instance_id: str) -> bool:
     """
     Check if an instance has been idle (low CPU) for the specified duration
+    Takes into account instance launch time to ensure we have sufficient data
     """
     try:
+        # Get instance launch time
+        instance_response = ec2_client.describe_instances(InstanceIds=[instance_id])
+        launch_time = None
+        
+        for reservation in instance_response['Reservations']:
+            for instance in reservation['Instances']:
+                launch_time = instance.get('LaunchTime')
+                break
+        
+        if not launch_time:
+            logger.warning(f"Could not get launch time for instance {instance_id}")
+            return False
+        
+        # Calculate time since launch
+        current_time = datetime.utcnow().replace(tzinfo=launch_time.tzinfo)
+        time_since_launch = current_time - launch_time
+        
+        # Check if instance has been running long enough for reliable metrics
+        required_runtime_hours = IDLE_DURATION_HOURS + 0.5  # Add 30 minutes buffer
+        if time_since_launch < timedelta(hours=required_runtime_hours):
+            logger.info(f"Instance {instance_id} launched {time_since_launch} ago, need at least {required_runtime_hours} hours for evaluation")
+            return False
+        
+        # Calculate metric collection period
         end_time = datetime.utcnow()
-        start_time = end_time - timedelta(hours=IDLE_DURATION_HOURS)
+        standard_start_time = end_time - timedelta(hours=IDLE_DURATION_HOURS)
+        
+        # Only consider launch time if instance was launched within the last 3 hours
+        launch_time_utc = launch_time.replace(tzinfo=None)
+        if launch_time_utc > standard_start_time:
+            # Instance launched within last 3 hours - use launch time as start
+            metrics_start_time = launch_time_utc
+        else:
+            # Instance launched more than 3 hours ago - use standard 3-hour lookback
+            metrics_start_time = standard_start_time
         
         response = cloudwatch_client.get_metric_statistics(
             Namespace='AWS/EC2',
@@ -224,7 +258,7 @@ def is_instance_idle(instance_id: str) -> bool:
                     'Value': instance_id
                 }
             ],
-            StartTime=start_time,
+            StartTime=metrics_start_time,
             EndTime=end_time,
             Period=300,  # 5-minute periods
             Statistics=['Average']
@@ -239,20 +273,39 @@ def is_instance_idle(instance_id: str) -> bool:
         # Sort datapoints by timestamp
         datapoints.sort(key=lambda x: x['Timestamp'])
         
-        # Check if all recent datapoints are below threshold
-        recent_datapoints = datapoints[-24:]  # Last 2 hours (24 * 5-minute periods)
+        # Calculate expected number of datapoints for 3 hours (36 * 5-minute periods)
+        expected_datapoints = int(IDLE_DURATION_HOURS * 12)  # 12 datapoints per hour
         
-        if len(recent_datapoints) < 12:  # At least 1 hour of data
-            logger.info(f"Insufficient metrics for instance {instance_id} (only {len(recent_datapoints)} datapoints)")
+        # Check if we have sufficient datapoints (at least 90% of expected)
+        min_required_datapoints = int(expected_datapoints * 0.9)
+        if len(datapoints) < min_required_datapoints:
+            logger.info(f"Insufficient metrics for instance {instance_id}: {len(datapoints)} datapoints, need at least {min_required_datapoints}")
             return False
+        
+        # Check for gaps in 5-minute intervals - ensure continuous monitoring
+        time_gaps = []
+        for i in range(1, len(datapoints)):
+            time_diff = (datapoints[i]['Timestamp'] - datapoints[i-1]['Timestamp']).total_seconds()
+            if time_diff > 360:  # More than 6 minutes gap (allowing for slight CloudWatch delays)
+                time_gaps.append(time_diff)
+        
+        if time_gaps:
+            total_gap_time = sum(time_gaps)
+            max_allowed_gap = 600  # 10 minutes total gap allowed
+            if total_gap_time > max_allowed_gap:
+                logger.info(f"Instance {instance_id} has significant gaps in metrics ({total_gap_time}s total), skipping evaluation")
+                return False
+        
+        # Use the most recent datapoints for idle evaluation
+        recent_datapoints = datapoints[-expected_datapoints:] if len(datapoints) >= expected_datapoints else datapoints
         
         idle_count = sum(1 for dp in recent_datapoints if dp['Average'] <= CPU_THRESHOLD)
         idle_percentage = (idle_count / len(recent_datapoints)) * 100
         
-        logger.info(f"Instance {instance_id}: {idle_percentage:.1f}% of datapoints below {CPU_THRESHOLD}% CPU")
+        logger.info(f"Instance {instance_id}: {idle_percentage:.1f}% of {len(recent_datapoints)} datapoints below {CPU_THRESHOLD}% CPU (launched {time_since_launch} ago)")
         
-        # Consider idle if 90% or more of datapoints are below threshold
-        return idle_percentage >= 90
+        # Consider idle only if ALL datapoints are below threshold (100%)
+        return idle_percentage == 100
         
     except Exception as e:
         logger.error(f"Error checking CPU metrics for instance {instance_id}: {str(e)}")
